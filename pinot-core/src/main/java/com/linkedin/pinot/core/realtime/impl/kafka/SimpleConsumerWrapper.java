@@ -52,7 +52,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Wrapper for Kafka's SimpleConsumer which ensures that we're connected to the appropriate broker for consumption.
  */
-public class SimpleConsumerWrapper implements Closeable {
+public class SimpleConsumerWrapper implements Closeable, KafkaConsumerWrapperInterface {
   private static final Logger LOGGER = LoggerFactory.getLogger(SimpleConsumerWrapper.class);
   private static final int SOCKET_TIMEOUT_MILLIS = 10000;
   private static final int SOCKET_BUFFER_SIZE = 512000;
@@ -72,7 +72,6 @@ public class SimpleConsumerWrapper implements Closeable {
   private final String _topic;
   private final int _partition;
   private final long _connectTimeoutMillis;
-  private final KafkaSimpleConsumerFactory _simpleConsumerFactory;
   private String[] _bootstrapHosts;
   private int[] _bootstrapPorts;
   private SimpleConsumer _simpleConsumer;
@@ -101,9 +100,7 @@ public class SimpleConsumerWrapper implements Closeable {
     }
   }
 
-  private SimpleConsumerWrapper(KafkaSimpleConsumerFactory simpleConsumerFactory, String bootstrapNodes,
-      String clientId, long connectTimeoutMillis) {
-    _simpleConsumerFactory = simpleConsumerFactory;
+  public SimpleConsumerWrapper(String bootstrapNodes, String clientId, long connectTimeoutMillis) {
     _clientId = clientId;
     _connectTimeoutMillis = connectTimeoutMillis;
     _metadataOnlyConsumer = true;
@@ -117,9 +114,7 @@ public class SimpleConsumerWrapper implements Closeable {
     setCurrentState(new ConnectingToBootstrapNode());
   }
 
-  private SimpleConsumerWrapper(KafkaSimpleConsumerFactory simpleConsumerFactory, String bootstrapNodes,
-      String clientId, String topic, int partition, long connectTimeoutMillis) {
-    _simpleConsumerFactory = simpleConsumerFactory;
+  public SimpleConsumerWrapper(String bootstrapNodes, String clientId, String topic, int partition, long connectTimeoutMillis) {
     _clientId = clientId;
     _topic = topic;
     _partition = partition;
@@ -211,8 +206,7 @@ public class SimpleConsumerWrapper implements Closeable {
 
       try {
         LOGGER.info("Connecting to bootstrap host {}:{}", _currentHost, _currentPort);
-        _simpleConsumer = _simpleConsumerFactory.buildSimpleConsumer(_currentHost, _currentPort, SOCKET_TIMEOUT_MILLIS,
-            SOCKET_BUFFER_SIZE, _clientId);
+        _simpleConsumer = new SimpleConsumer(_currentHost, _currentPort, SOCKET_TIMEOUT_MILLIS, SOCKET_BUFFER_SIZE, _clientId);
         setCurrentState(new ConnectedToBootstrapNode());
       } catch (Exception e) {
         handleConsumerException(e);
@@ -321,9 +315,7 @@ public class SimpleConsumerWrapper implements Closeable {
 
       // Connect to the partition leader
       try {
-        _simpleConsumer =
-            _simpleConsumerFactory.buildSimpleConsumer(_leader.host(), _leader.port(), SOCKET_TIMEOUT_MILLIS,
-                SOCKET_BUFFER_SIZE, _clientId);
+        _simpleConsumer = new SimpleConsumer(_currentHost, _currentPort, SOCKET_TIMEOUT_MILLIS, SOCKET_BUFFER_SIZE, _clientId);
 
         setCurrentState(new ConnectedToPartitionLeader());
       } catch (Exception e) {
@@ -593,7 +585,7 @@ public class SimpleConsumerWrapper implements Closeable {
     throw new TimeoutException();
   }
 
-  private Iterable<MessageAndOffset> buildOffsetFilteringIterable(final ByteBufferMessageSet messageAndOffsets, final long startOffset, final long endOffset) {
+  public Iterable<MessageAndOffset> buildOffsetFilteringIterable(final ByteBufferMessageSet messageAndOffsets, final long startOffset, final long endOffset) {
     return Iterables.filter(messageAndOffsets, new Predicate<MessageAndOffset>() {
       @Override
       public boolean apply(@Nullable MessageAndOffset input) {
@@ -619,22 +611,19 @@ public class SimpleConsumerWrapper implements Closeable {
    * partition metadata. It does not allow to consume from a partition, since Kafka requires connecting to the
    * leader of that partition for consumption.
    *
-   * @param simpleConsumerFactory The SimpleConsumer factory to use
    * @param bootstrapNodes A comma separated list of Kafka broker nodes
    * @param clientId The Kafka client identifier, to be used to uniquely identify the client when tracing calls
    * @param connectTimeoutMillis The timeout for connecting or re-establishing a connection to the Kafka cluster
    * @return A consumer wrapper
    */
-  public static SimpleConsumerWrapper forMetadataConsumption(KafkaSimpleConsumerFactory simpleConsumerFactory,
-      String bootstrapNodes, String clientId, long connectTimeoutMillis) {
-    return new SimpleConsumerWrapper(simpleConsumerFactory, bootstrapNodes, clientId, connectTimeoutMillis);
+  public static SimpleConsumerWrapper forMetadataConsumption(String bootstrapNodes, String clientId, long connectTimeoutMillis) {
+    return new SimpleConsumerWrapper(bootstrapNodes, clientId, connectTimeoutMillis);
   }
 
   /**
    * Creates a simple consumer wrapper that automatically connects to the leader broker for the given topic and
    * partition. This consumer wrapper can also fetch topic and partition metadata.
    *
-   * @param simpleConsumerFactory The SimpleConsumer factory to use
    * @param bootstrapNodes A comma separated list of Kafka broker nodes
    * @param clientId The Kafka client identifier, to be used to uniquely identify the client when tracing calls
    * @param topic The Kafka topic to consume from
@@ -642,9 +631,9 @@ public class SimpleConsumerWrapper implements Closeable {
    * @param connectTimeoutMillis The timeout for connecting or re-establishing a connection to the Kafka cluster
    * @return A consumer wrapper
    */
-  public static SimpleConsumerWrapper forPartitionConsumption(KafkaSimpleConsumerFactory simpleConsumerFactory,
+  public static SimpleConsumerWrapper forPartitionConsumption(
       String bootstrapNodes, String clientId, String topic, int partition, long connectTimeoutMillis) {
-    return new SimpleConsumerWrapper(simpleConsumerFactory, bootstrapNodes, clientId, topic, partition,
+    return new SimpleConsumerWrapper(bootstrapNodes, clientId, topic, partition,
         connectTimeoutMillis);
   }
 
