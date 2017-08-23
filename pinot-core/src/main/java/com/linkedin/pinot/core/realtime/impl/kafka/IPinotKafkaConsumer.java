@@ -20,7 +20,7 @@ import java.io.IOException;
 import kafka.message.MessageAndOffset;
 
 
-public interface KafkaConsumerWrapperInterface {
+public interface IPinotKafkaConsumer {
   int getPartitionCount(String topic, long timeoutMillis);
 
   MessageBatch fetchMessagesAndHighWatermark(long startOffset,
