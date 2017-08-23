@@ -17,7 +17,6 @@
 package com.linkedin.pinot.core.realtime.impl.kafka;
 
 import java.io.IOException;
-import kafka.message.MessageAndOffset;
 
 
 public interface IPinotKafkaConsumer {
@@ -25,9 +24,6 @@ public interface IPinotKafkaConsumer {
 
   MessageBatch fetchMessagesAndHighWatermark(long startOffset,
         long endOffset, int timeoutMillis) throws java.util.concurrent.TimeoutException;
-
-  Iterable<MessageAndOffset> fetchMessages(long startOffset, long endOffset, int timeoutMillis)
-        throws java.util.concurrent.TimeoutException;
 
   long fetchPartitionOffset(String requestedOffset, int timeoutMillis)
         throws java.util.concurrent.TimeoutException;

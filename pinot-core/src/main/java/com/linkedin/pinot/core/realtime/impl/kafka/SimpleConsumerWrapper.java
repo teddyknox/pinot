@@ -16,6 +16,7 @@
 
 package com.linkedin.pinot.core.realtime.impl.kafka;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Splitter;
@@ -158,6 +159,11 @@ public class SimpleConsumerWrapper implements Closeable, IPinotKafkaConsumer {
     }
   }
 
+  @VisibleForTesting
+  public SimpleConsumer makeSimpleConsumer() {
+    return new SimpleConsumer(_currentHost, _currentPort, SOCKET_TIMEOUT_MILLIS, SOCKET_BUFFER_SIZE, _clientId);
+  }
+
   private abstract class State {
     private ConsumerState stateValue;
 
@@ -207,7 +213,7 @@ public class SimpleConsumerWrapper implements Closeable, IPinotKafkaConsumer {
 
       try {
         LOGGER.info("Connecting to bootstrap host {}:{}", _currentHost, _currentPort);
-        _simpleConsumer = new SimpleConsumer(_currentHost, _currentPort, SOCKET_TIMEOUT_MILLIS, SOCKET_BUFFER_SIZE, _clientId);
+        _simpleConsumer = makeSimpleConsumer();
         setCurrentState(new ConnectedToBootstrapNode());
       } catch (Exception e) {
         handleConsumerException(e);
@@ -605,37 +611,6 @@ public class SimpleConsumerWrapper implements Closeable, IPinotKafkaConsumer {
         return true;
       }
     });
-  }
-
-  /**
-   * Creates a simple consumer wrapper that connects to a random Kafka broker, which allows for fetching topic and
-   * partition metadata. It does not allow to consume from a partition, since Kafka requires connecting to the
-   * leader of that partition for consumption.
-   *
-   * @param bootstrapNodes A comma separated list of Kafka broker nodes
-   * @param clientId The Kafka client identifier, to be used to uniquely identify the client when tracing calls
-   * @param connectTimeoutMillis The timeout for connecting or re-establishing a connection to the Kafka cluster
-   * @return A consumer wrapper
-   */
-  public static SimpleConsumerWrapper forMetadataConsumption(String bootstrapNodes, String clientId, long connectTimeoutMillis) {
-    return new SimpleConsumerWrapper(bootstrapNodes, clientId, connectTimeoutMillis);
-  }
-
-  /**
-   * Creates a simple consumer wrapper that automatically connects to the leader broker for the given topic and
-   * partition. This consumer wrapper can also fetch topic and partition metadata.
-   *
-   * @param bootstrapNodes A comma separated list of Kafka broker nodes
-   * @param clientId The Kafka client identifier, to be used to uniquely identify the client when tracing calls
-   * @param topic The Kafka topic to consume from
-   * @param partition The partition id to consume from
-   * @param connectTimeoutMillis The timeout for connecting or re-establishing a connection to the Kafka cluster
-   * @return A consumer wrapper
-   */
-  public static SimpleConsumerWrapper forPartitionConsumption(
-      String bootstrapNodes, String clientId, String topic, int partition, long connectTimeoutMillis) {
-    return new SimpleConsumerWrapper(bootstrapNodes, clientId, topic, partition,
-        connectTimeoutMillis);
   }
 
   @Override
