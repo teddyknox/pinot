@@ -16,17 +16,9 @@
 
 package com.linkedin.pinot.core.realtime.impl.kafka;
 
-import java.io.IOException;
-
-
-public interface IPinotKafkaConsumer {
-  int getPartitionCount(String topic, long timeoutMillis);
-
-  MessageBatch fetchMessagesAndHighWatermark(long startOffset,
-        long endOffset, int timeoutMillis) throws java.util.concurrent.TimeoutException;
-
-  long fetchPartitionOffset(String requestedOffset, int timeoutMillis)
-        throws java.util.concurrent.TimeoutException;
-
-  void close() throws IOException;
+public class SimpleConsumerFactory implements KafkaConsumerFactory {
+  public PinotKafkaConsumer buildConsumer(String bootstrapNodes, String clientId, String topic, int partition,
+      long connectTimeoutMillis) {
+    return new SimpleConsumerWrapper(bootstrapNodes, clientId, topic, partition, connectTimeoutMillis);
+  }
 }
