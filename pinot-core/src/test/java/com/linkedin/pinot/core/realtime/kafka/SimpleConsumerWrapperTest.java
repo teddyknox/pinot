@@ -240,7 +240,7 @@ public class SimpleConsumerWrapperTest {
     );
     SimpleConsumerWrapper consumerWrapper = SimpleConsumerWrapper.forPartitionConsumption(
         simpleConsumerFactory, "abcd:1234,bcde:2345", "clientId", "theTopic", 0, 10000L);
-    consumerWrapper.fetchMessages(12345L, 23456L, 10000);
+    consumerWrapper.fetchMessagesAndHighWatermark(12345L, 23456L, 10000);
   }
 
   @Test(enabled = false)

@@ -16,6 +16,12 @@
 
 package com.linkedin.pinot.core.realtime.impl.kafka;
 
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import com.google.common.base.Splitter;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.Uninterruptibles;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -23,17 +29,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.protocol.Errors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.base.Splitter;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.util.concurrent.Uninterruptibles;
 import javax.annotation.Nullable;
 import kafka.api.FetchRequestBuilder;
 import kafka.api.PartitionOffsetRequestInfo;
@@ -48,6 +43,10 @@ import kafka.javaapi.TopicMetadataResponse;
 import kafka.javaapi.consumer.SimpleConsumer;
 import kafka.javaapi.message.ByteBufferMessageSet;
 import kafka.message.MessageAndOffset;
+import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.protocol.Errors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 
 /**
@@ -434,7 +433,7 @@ public class SimpleConsumerWrapper implements Closeable {
    * @return An iterable containing messages fetched from Kafka and their offsets, as well as the high watermark for
    * this partition.
    */
-  public synchronized Pair<Iterable<MessageAndOffset>, Long> fetchMessagesAndHighWatermark(long startOffset,
+  public synchronized MessageBatch fetchMessagesAndHighWatermark(long startOffset,
       long endOffset, int timeoutMillis) throws java.util.concurrent.TimeoutException {
     Preconditions.checkState(!_metadataOnlyConsumer, "Cannot fetch messages from a metadata-only SimpleConsumerWrapper");
     // Ensure that we're connected to the leader
@@ -459,7 +458,15 @@ public class SimpleConsumerWrapper implements Closeable {
     if (!fetchResponse.hasError()) {
       final Iterable<MessageAndOffset> messageAndOffsetIterable =
           buildOffsetFilteringIterable(fetchResponse.messageSet(_topic, _partition), startOffset, endOffset);
-      return Pair.of(messageAndOffsetIterable, fetchResponse.highWatermark(_topic, _partition));
+
+      for (MessageAndOffset messageAndOffset : messageAndOffsetIterable) {
+        messageAndOffset.message();
+        messageAndOffset.offset();
+        KafkaAvroMessageDecoder decoder = new KafkaAvroMessageDecoder();
+
+      }
+      // TODO: Instantiate with factory
+      return new SimpleConsumerMessageBatch(messageAndOffsetIterable);
     } else {
       throw exceptionForKafkaErrorCode(fetchResponse.errorCode(_topic, _partition));
     }
@@ -505,21 +512,6 @@ public class SimpleConsumerWrapper implements Closeable {
       default:
         return new RuntimeException("Unhandled error " + kafkaError);
     }
-  }
-
-  /**
-   * Fetch messages from Kafka between the specified offsets.
-   *
-   * @param startOffset The offset of the first message desired, inclusive
-   * @param endOffset The offset of the last message desired, exclusive, or {@link Long#MAX_VALUE} for no end offset.
-   * @param timeoutMillis Timeout in milliseconds
-   * @throws java.util.concurrent.TimeoutException If the operation could not be completed within {@code timeoutMillis}
-   * milliseconds
-   * @return An iterable containing messages fetched from Kafka and their offsets.
-   */
-  public synchronized Iterable<MessageAndOffset> fetchMessages(long startOffset, long endOffset, int timeoutMillis)
-      throws java.util.concurrent.TimeoutException {
-    return fetchMessagesAndHighWatermark(startOffset, endOffset, timeoutMillis).getLeft();
   }
 
   /**

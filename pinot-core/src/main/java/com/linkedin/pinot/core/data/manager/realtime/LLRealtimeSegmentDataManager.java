@@ -45,6 +45,7 @@ import com.linkedin.pinot.core.realtime.impl.RealtimeSegmentImpl;
 import com.linkedin.pinot.core.realtime.impl.kafka.KafkaLowLevelStreamProviderConfig;
 import com.linkedin.pinot.core.realtime.impl.kafka.KafkaMessageDecoder;
 import com.linkedin.pinot.core.realtime.impl.kafka.KafkaSimpleConsumerFactoryImpl;
+import com.linkedin.pinot.core.realtime.impl.kafka.MessageBatch;
 import com.linkedin.pinot.core.realtime.impl.kafka.SimpleConsumerWrapper;
 import com.linkedin.pinot.core.segment.index.loader.IndexLoadingConfig;
 import com.linkedin.pinot.server.realtime.ServerSegmentCompletionProtocolHandler;
@@ -52,7 +53,6 @@ import com.yammer.metrics.core.Meter;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -61,7 +61,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import kafka.message.MessageAndOffset;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -301,13 +300,12 @@ public class LLRealtimeSegmentDataManager extends RealtimeSegmentDataManager {
       // Update _currentOffset upon return from this method
       Iterable<MessageAndOffset> messagesAndOffsets = null;
       Long highWatermark = null;
+      MessageBatch messageBatch = null;
       try {
-        Pair<Iterable<MessageAndOffset>, Long> messagesAndWatermark =
-            _consumerWrapper.fetchMessagesAndHighWatermark(_currentOffset, _endOffset,
+        messageBatch = _consumerWrapper.fetchMessagesAndHighWatermark(_currentOffset, _endOffset,
                 _kafkaStreamMetadata.getKafkaFetchTimeoutMillis());
         consecutiveErrorCount = 0;
-        messagesAndOffsets = messagesAndWatermark.getLeft();
-        highWatermark = messagesAndWatermark.getRight();
+
       } catch (TimeoutException e) {
         handleTransientKafkaErrors(e);
         continue;
@@ -324,7 +322,7 @@ public class LLRealtimeSegmentDataManager extends RealtimeSegmentDataManager {
         continue;
       }
 
-      processKafkaEvents(messagesAndOffsets, highWatermark, idlePipeSleepTimeMillis);
+      processKafkaEvents(messageBatch, idlePipeSleepTimeMillis);
 
       if (_currentOffset != lastUpdatedOffset) {
         // We consumed something. Update the highest kafka offset as well as partition-consuming metric.
@@ -353,18 +351,17 @@ public class LLRealtimeSegmentDataManager extends RealtimeSegmentDataManager {
     return true;
   }
 
-  private void processKafkaEvents(Iterable<MessageAndOffset> messagesAndOffsets, Long highWatermark, long idlePipeSleepTimeMillis) {
+  private void processKafkaEvents(MessageBatch messagesAndOffsets, long idlePipeSleepTimeMillis) {
     Meter realtimeRowsConsumedMeter = null;
     Meter realtimeRowsDroppedMeter = null;
-
-    Iterator<MessageAndOffset> msgIterator = messagesAndOffsets.iterator();
 
     int indexedMessageCount = 0;
     int kafkaMessageCount = 0;
     boolean canTakeMore = true;
     GenericRow decodedRow = null;
     GenericRow transformedRow = null;
-    while (!_shouldStop && !endCriteriaReached() && msgIterator.hasNext()) {
+    int index = 0;
+    while (!_shouldStop && !endCriteriaReached() && index < messagesAndOffsets.getMessageCount()) {
       if (!canTakeMore) {
         // The RealtimeSegmentImpl that we are pushing rows into has indicated that it cannot accept any more
         // rows. This can happen in one of two conditions:
@@ -384,19 +381,10 @@ public class LLRealtimeSegmentDataManager extends RealtimeSegmentDataManager {
         throw new RuntimeException("Realtime segment full");
       }
       // Index each message
-      MessageAndOffset messageAndOffset = msgIterator.next();
-      byte[] array = messageAndOffset.message().payload().array();
-      int offset = messageAndOffset.message().payload().arrayOffset();
-      int length = messageAndOffset.message().payloadSize();
-      decodedRow = GenericRow.createOrReuseRow(decodedRow);
-      decodedRow = _messageDecoder.decode(array, offset, length, decodedRow);
-
-      // Update lag metric on the first message of each batch
-      if (kafkaMessageCount == 0) {
-        long messageOffset = messageAndOffset.offset();
-        long offsetDifference = highWatermark - messageOffset;
-        _serverMetrics.setValueOfTableGauge(_metricKeyName, ServerGauge.KAFKA_PARTITION_OFFSET_LAG, offsetDifference);
-      }
+      decodedRow = _messageDecoder.decode(
+          messagesAndOffsets.getMessageAtIndex(index),
+          messagesAndOffsets.getMessageOffsetAtIndex(index),
+          messagesAndOffsets.getMessageLengthAtIndex(index), decodedRow);
 
       if (decodedRow != null) {
         transformedRow = GenericRow.createOrReuseRow(transformedRow);
@@ -414,9 +402,10 @@ public class LLRealtimeSegmentDataManager extends RealtimeSegmentDataManager {
         realtimeRowsDroppedMeter = _serverMetrics.addMeteredTableValue(_metricKeyName, ServerMeter.INVALID_REALTIME_ROWS_DROPPED, 1, realtimeRowsDroppedMeter);
       }
 
-      _currentOffset = messageAndOffset.nextOffset();
+      _currentOffset = messagesAndOffsets.getNextKafkaMessageOffsetAtIndex(index);
       _numRowsConsumed++;
       kafkaMessageCount++;
+      index++;
     }
     updateCurrentDocumentCountMetrics();
     if (kafkaMessageCount != 0) {
