@@ -23,6 +23,7 @@ import javax.annotation.Nullable;
 import org.apache.commons.lang3.EnumUtils;
 import org.codehaus.jackson.annotate.JsonIgnore;
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
+import org.joda.time.format.DateTimeFormat;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -177,12 +178,158 @@ public final class DateTimeFieldSpec extends FieldSpec {
     _dateTimeType = dateTimeType;
   }
 
+  /**
+   * Constructs a dateTimeSpec format, given the components of a format
+   * @param columnSize
+   * @param columnUnit
+   * @param columnTimeFormat
+   * @return
+   */
+  @JsonIgnore
   public static String constructFormat(int columnSize, TimeUnit columnUnit, String columnTimeFormat) {
     return Joiner.on(COLON_SEPARATOR).join(columnSize, columnUnit, columnTimeFormat);
   }
 
+  /**
+   * Constructs a dateTimeSpec granularity given the components of a granularity
+   * @param columnSize
+   * @param columnUnit
+   * @return
+   */
+  @JsonIgnore
   public static String constructGranularity(int columnSize, TimeUnit columnUnit) {
     return Joiner.on(COLON_SEPARATOR).join(columnSize, columnUnit);
+  }
+
+  /**
+   * Extracts the column size from the format of a dateTimeSpec
+   * (1st token in colon separated format)
+   *
+   * eg: if format=1:HOURS:EPOCH, will return 1
+   * @return
+   */
+  @JsonIgnore
+  public int getColumnSizeFromFormat() {
+    String[] formatTokens = _format.split(COLON_SEPARATOR);
+    int size = Integer.valueOf(formatTokens[0]);
+    return size;
+  }
+
+  /**
+   * Extracts the column unit from the format of a dateTimeSpec
+   * (2nd token in colon separated format)
+   *
+   * eg: if format=5:MINUTES:EPOCH, will return MINUTES
+   * @return
+   */
+  @JsonIgnore
+  public TimeUnit getColumnUnitFromFormat() {
+    String[] formatTokens = _format.split(COLON_SEPARATOR);
+    TimeUnit unit = TimeUnit.valueOf(formatTokens[1]);
+    return unit;
+  }
+
+  /**
+   * Extracts the TimeFormat from the format of a dateTimeSpec
+   * (3rd token in colon separated format)
+   *
+   * eg: if format=1:DAYS:EPOCH, will return EPOCH
+   * @return
+   */
+  @JsonIgnore
+  public TimeFormat getTimeFormatFromFormat() {
+    String[] formatTokens = _format.split(COLON_SEPARATOR);
+    TimeFormat timeFormat = TimeFormat.valueOf(formatTokens[2]);
+    return timeFormat;
+  }
+
+  /**
+   * Extracts the simmple date format pattern from the format of a dateTimeSpec
+   * (4th token in colon separated format in case of TimeFormat=SIMPLE_DATE_FORMAT)
+   *
+   * eg: if format=1:HOURS:EPOCH, will throw exception
+   * if format=1:HOURS:SIMPLE_DATE_FORMAT:yyyyMMddHH will return yyyyMMddHH
+   * @return
+   */
+  @JsonIgnore
+  public String getSDFPatternFromFormat() {
+    String pattern = null;
+    String[] formatTokens = _format.split(COLON_SEPARATOR);
+    if (TimeFormat.SIMPLE_DATE_FORMAT.toString().equals(formatTokens[2])) {
+      pattern = formatTokens[3];
+    } else {
+      throw new IllegalArgumentException("SDF pattern does not exist for EPOCH");
+    }
+    return pattern;
+  }
+
+  /**
+   * Get the dateTimeFieldSpec column value, given a timestamp in millis
+   * eg:
+   * 1) given dateTimeColumnValueMS = 1498892400000 and format=1:HOURS:EPOCH,
+   * dateTimeSpec.fromMillis(1498892400000) = 416359 (i.e. dateTimeColumnValueMS/(1000*60*60))
+   *
+   * 2) given dateTimeColumnValueMS = 1498892400000 and format=5:MINUTES:EPOCH,
+   * dateTimeSpec.fromMillis(1498892400000) = 4996308 (i.e. timeColumnValueMS/(1000*60*5))
+   *
+   * 3) given dateTimeColumnValueMS = 1498892400000 and format=1:DAYS:SIMPLE_DATE_FORMAT:yyyyMMdd,
+   * dateTimeSpec.fromMillis(1498892400000) = 20170701
+   * @param dateTimeColumnValueMS
+   * @return dateTime column value in dateTimeFieldSpec
+   */
+  @JsonIgnore
+  public Object fromMillis(Long dateTimeColumnValueMS) {
+    Preconditions.checkNotNull(dateTimeColumnValueMS);
+
+    Object dateTimeColumnValue = null;
+
+    TimeFormat timeFormat = getTimeFormatFromFormat();
+
+    if (timeFormat.equals(TimeFormat.EPOCH)) {
+      int size = getColumnSizeFromFormat();
+      TimeUnit unit = getColumnUnitFromFormat();
+      dateTimeColumnValue = unit.convert(dateTimeColumnValueMS, TimeUnit.MILLISECONDS) / size;
+    } else {
+      String pattern = getSDFPatternFromFormat();
+      dateTimeColumnValue = DateTimeFormat.forPattern(pattern).print(dateTimeColumnValueMS);
+    }
+    return dateTimeColumnValue;
+  }
+
+
+  /**
+   * Get the datetime column value in millis, for the dateTimeFieldSpec
+   * eg:
+   * 1) given dateTimeColumnValue = 416359 and format=1:HOURS:EPOCH
+   * dateTimeSpec.toMillis(416359) = 1498892400000 (i.e. timeColumnValue*60*60*1000)
+   *
+   * 2) given dateTimeColumnValue = 4996308 and format=5:MINUTES:EPOCH
+   * dateTimeSpec.toMillis(4996308) = 1498892400000 (i.e. timeColumnValue*5*60*1000)
+   *
+   * 3) given dateTimeColumnValue = 20170701 and format=1:DAYS:SIMPLE_DATE_FORMAT:yyyyMMdd
+   * dateTimeSpec.toMillis(20170701) = 1498892400000
+   *
+   * @param dateTimeColumnValue - datetime Column value to convert to millis
+   * @return datetime value in millis
+   */
+  @JsonIgnore
+  public Long toMillis(Object dateTimeColumnValue) {
+    Preconditions.checkNotNull(dateTimeColumnValue);
+
+    Long timeColumnValueMS = 0L;
+
+    TimeFormat timeFormat = getTimeFormatFromFormat();
+
+    if (timeFormat.equals(TimeFormat.EPOCH)) {
+      int size = getColumnSizeFromFormat();
+      TimeUnit unit = getColumnUnitFromFormat();
+      timeColumnValueMS = TimeUnit.MILLISECONDS.convert((Long) dateTimeColumnValue * size, unit);
+    } else {
+      String pattern = getSDFPatternFromFormat();
+      timeColumnValueMS = DateTimeFormat.forPattern(pattern).parseMillis((String) dateTimeColumnValue);
+    }
+
+    return timeColumnValueMS;
   }
 
   @Override
