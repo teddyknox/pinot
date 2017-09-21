@@ -761,7 +761,12 @@ public class PinotLLCRealtimeSegmentManagerTest {
       _partitionAssignment = partitionAssignment;
       _startOffset = startOffset;
       if (_setupInitialSegments) {
-        super.setupInitialSegments(realtimeTableName, partitionAssignment, topicName, startOffset, bootstrapHostList, idealState, create, nReplicas, flushSize);
+        try {
+          super.setupInitialSegments(realtimeTableName, partitionAssignment, topicName, startOffset, bootstrapHostList,
+                idealState, create, nReplicas, flushSize);
+        } catch (Exception e) {
+          LOGGER.info("Caught exception setting up segments, Exception {}", e);
+        }
       }
     }
 

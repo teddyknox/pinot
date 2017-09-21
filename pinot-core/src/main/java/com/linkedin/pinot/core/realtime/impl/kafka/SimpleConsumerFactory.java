@@ -21,12 +21,12 @@ import javax.annotation.Nonnull;
 
 public class SimpleConsumerFactory implements PinotKafkaConsumerFactory {
   public PinotKafkaConsumer buildConsumer(String bootstrapNodes, String clientId, String topic, int partition,
-      long connectTimeoutMillis) {
+      long connectTimeoutMillis, String kafkaSchemaRegistry) {
     KafkaSimpleConsumerFactoryImpl kafkaSimpleConsumerFactory = new KafkaSimpleConsumerFactoryImpl();
     return new SimpleConsumerWrapper(kafkaSimpleConsumerFactory, bootstrapNodes, clientId, topic, partition, connectTimeoutMillis);
   }
 
-  public PinotKafkaConsumer buildMetadataFetcher(@Nonnull String bootstrapNodes, @Nonnull String clientId, @Nonnull long connectTimeoutMillis) {
+  public PinotKafkaConsumer buildMetadataFetcher(@Nonnull String bootstrapNodes, @Nonnull String clientId, @Nonnull long connectTimeoutMillis, String kafkaSchemaRegistry) {
     KafkaSimpleConsumerFactoryImpl kafkaSimpleConsumerFactory = new KafkaSimpleConsumerFactoryImpl();
     return new SimpleConsumerWrapper(kafkaSimpleConsumerFactory, bootstrapNodes, clientId, connectTimeoutMillis);
   }

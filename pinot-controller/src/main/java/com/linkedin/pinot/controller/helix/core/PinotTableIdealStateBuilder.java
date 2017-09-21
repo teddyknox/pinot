@@ -313,12 +313,14 @@ public class PinotTableIdealStateBuilder {
       PinotKafkaConsumerFactory pinotKafkaConsumerFactory;
       try {
         pinotKafkaConsumerFactory = (PinotKafkaConsumerFactory) Class.forName(_kafkaStreamMetadata.getConsumerFactory()).newInstance();
+        LOGGER.info("Got pinot consumer factory {}", pinotKafkaConsumerFactory);
       } catch (Exception e) {
         LOGGER.info("No consumer factory set. Caught exception {}, setting to default SimpleConsumerFactory", e);
         pinotKafkaConsumerFactory = new SimpleConsumerFactory();
       }
+      String kafkaSchemaRegistry = _kafkaStreamMetadata.getKafkaSchemaRegistry();
       PinotKafkaConsumer consumerWrapper = pinotKafkaConsumerFactory.buildMetadataFetcher(bootstrapHosts,
-          PinotTableIdealStateBuilder.class.getSimpleName() + "-" + kafkaTopicName, KAFKA_CONNECTION_TIMEOUT_MILLIS);
+          PinotTableIdealStateBuilder.class.getSimpleName() + "-" + kafkaTopicName, KAFKA_CONNECTION_TIMEOUT_MILLIS, kafkaSchemaRegistry);
 
       try {
         _partitionCount = consumerWrapper.getPartitionCount(kafkaTopicName, /*maxWaitTimeMs=*/5000L);
